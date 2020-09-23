@@ -6,6 +6,8 @@
 
 # GLOBALS
 
-dir_data <- "./Data"
-dir_dataout <- "./Dataout"
+dir_data <- "Data"
+dir_dataout <- "Dataout"
+
+dir_datim <- "../../HFR-Data/Datim"
 
