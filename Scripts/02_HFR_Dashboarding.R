@@ -275,7 +275,6 @@ source("./Scripts/00_Config.R")
     }
 
 
-
     #' validate OU hfr_sqlview
     #'
     #' @param df_hfr HFR Processed data
@@ -704,85 +703,3 @@ source("./Scripts/00_Config.R")
     ## Exports
     df_checked %>%
         write_csv(path = paste0("./Dataout/PD", curr_pd, "_Processed_vs_SQLView_Errors_", format(Sys.Date(), "%Y%m%d"), ".csv"), na = "")
-
-
-
-
-
-
-
-
-
-
-
-
-    ## Mechs for current period
-    cntry_sqlview %>%
-        distinct(hfr_pd, mech_code, mech_name) %>%
-        arrange(hfr_pd, mech_code) %>%
-        prinf()
-
-    ## Mechs / Indicators for current period
-    cntry_sqlview %>%
-        distinct(hfr_pd, mech_code, indicator) %>%
-        arrange(hfr_pd, mech_code, indicator) %>%
-        prinf()
-
-    ## Number of indicators by mech
-    cntry_sqlview %>%
-        distinct(hfr_pd, mech_code, indicator) %>%
-        count(hfr_pd, mech_code) %>%
-        prinf()
-
-    ## Unique Indicators: 6
-    cntry_sqlview %>%
-        distinct(indicator) %>%
-        pull()
-
-    ## Data Variables
-
-    cntry_sqlview %>% names()
-    # [1] "orgunituid"        "date"
-    # [3] "fy"                "hfr_pd"
-    # [5] "mech_code"         "indicator"
-    # [7] "agecoarse"         "sex"
-    # [9] "otherdisaggregate" "val"
-    # [11] "mer_targets"       "mer_results"
-    # [13] "countryname"       "operatingunit"
-    # [15] "orgunit"           "psnu"
-    # [17] "snu1"              "psnuuid"
-    # [19] "mech_name"         "primepartner"
-
-
-    ## Sex
-    cntry_sqlview %>%
-        distinct(fy, hfr_pd, mech_code, sex)
-
-    cntry_sqlview %>%
-        filter(!sex %in% valid_sex) %>%
-        distinct(fy, hfr_pd, operatingunit, countryname, mech_code, sex)
-
-    ## Age
-    cntry_sqlview %>%
-        distinct(fy, hfr_pd, agecoarse)
-
-    cntry_sqlview %>%
-        filter(!agecoarse %in% valid_age) %>%
-        distinct(hfr_pd, operatingunit, countryname, mech_code, agecoarse)
-
-
-    ## Val
-    cntry_sqlview %>%
-        filter(!is.numeric(val))
-
-    cntry_sqlview %>%
-        filter(is.numeric(val) | is.na(val)) %>%
-        distinct(fy, hfr_pd, operatingunit, countryname, orgunit, mech_code, indicator, agecoarse, sex, otherdisaggregate, val)
-
-
-    ## generate SQL
-
-
-
-
-
