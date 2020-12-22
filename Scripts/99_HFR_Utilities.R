@@ -18,6 +18,49 @@ source("./Scripts/00_Config.R")
 
 # FUNCTIONS -------------------------------------------
 
+files <- list.files(
+  path = dir_curr_pd,
+  pattern = "^HFR_2020.\\d{2}_[A-Z]{3}_.*.csv$",
+  full.names = TRUE
+)
+
+#' @title Get Latest files
+#' 
+#' @param files list of processed file names
+#' @return list of latest processed file names
+#' 
+get_latest <- function(files) {
+  
+  latest_files <- files %>% 
+    file.info() %>%
+    tibble::rownames_to_column(var = "filepath") %>% 
+    dplyr::filter(size > 0) %>% 
+    dplyr::rowwise() %>% 
+    dplyr::mutate(
+      filename = basename(filepath),
+      filename = dplyr::str_remove_all(filename, "HFR_|processed_|.csv")
+    ) %>% 
+    dplyr::ungroup() %>% 
+    tidyr::separate(
+      filename, 
+      into = c("hfr_pd", "ou_country", "mech_code", "pdate"), 
+      sep = "_",
+      remove = F
+    ) %>% 
+    dplyr::group_by(hfr_pd, ou_country, mech_code, pdate) %>% 
+    dplyr::filter(pdate == max(pdate)) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::pull(filepath)
+    
+  return(latest_files)
+}
+  
+
+
+
+
+  
+
 
 #' Get SQL View data
 #'
