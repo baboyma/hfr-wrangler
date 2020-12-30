@@ -57,11 +57,6 @@ get_latest <- function(files) {
   
 
 
-
-
-  
-
-
 #' Get SQL View data
 #'
 #' @param dir_path Directory path
