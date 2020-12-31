@@ -67,15 +67,15 @@ library(aws.s3)
     
     # Check keys
     if (is.null(access_key))
-      access_key = get_key("s3", "access key")
+      access_key = glamr::get_s3key("access")
     
     if (is.null(secret_key))
-      secret_key = get_key("s3", "secret key")
+      secret_key = glamr::get_s3key("secret")
     
     # Get S3 Buckets as tibble
     aws.s3::bucket_list_df(
-      key = access_key, 
-      secret = secret_key
+        key = access_key, 
+        secret = secret_key
       ) %>% 
       dplyr::as_tibble() %>% 
       janitor::clean_names()
@@ -124,10 +124,10 @@ library(aws.s3)
     
     # Check keys
     if (is.null(access_key))
-      access_key = get_key("s3", "access key")
+      access_key = glamr::get_s3key("access")
     
     if (is.null(secret_key))
-      secret_key = get_key("s3", "secret key")
+      secret_key = glamr::get_s3key("secret")
     
     # Get & clean objects
     objects <- aws.s3::get_bucket_df(
@@ -141,9 +141,9 @@ library(aws.s3)
       janitor::clean_names() %>% #glimpse()
       dplyr::rename(etag = e_tag) %>% 
       dplyr::mutate(
-        etag = str_remove_all(etag, '\"'),
-        last_modified = lubradate::ymd(base::as.Date(last_modified)),
-        size = as.integer(size)
+        etag = stringr::str_remove_all(etag, '\"'),
+        last_modified = lubridate::ymd(base::as.Date(last_modified)),
+        size = base::as.integer(size)
       ) %>% 
       dplyr::relocate(bucket, .before = 1)
     
@@ -175,7 +175,7 @@ library(aws.s3)
       base::sort()
     
     # Set new colnames
-    s3_paths <- paste0("path", seq(1, max(paths), 1))
+    s3_paths <- base::paste0("path", base::seq(1, base::max(paths), 1))
     
     s3_paths_clean <- c("system", 
                         "sys_env", 
@@ -193,11 +193,8 @@ library(aws.s3)
     
     # Separate paths & document
     df_objects <- df_objects %>% 
-      separate(key, 
-               into = s3_paths, 
-               sep = "/",
-               remove = FALSE,
-               fill = "right") 
+      tidyr::separate(key, into = s3_paths, sep = "/", 
+                      remove = FALSE, fill = "right") 
     
     # remove system files/folders
     if (rmv_sysfiles) {
@@ -205,7 +202,7 @@ library(aws.s3)
       data_type <- s3_paths[3]
       
       df_objects <- df_objects %>% 
-        dplyr::filter(!!sym(data_type) %in% c("raw", "processed"))
+        dplyr::filter(!!dplyr::sym(data_type) %in% c("raw", "processed"))
     }
              
     # remove hidden files / path (eg: .trifacta) 
@@ -216,12 +213,41 @@ library(aws.s3)
       
       df_objects <- df_objects %>% 
         dplyr::filter(
-          !stringr::str_detect(sym({{data_route}}), "^[.]"), 
-          !stringr::str_detect(sym({{data_object}}), "^[.]")
+          !stringr::str_detect(dplyr::sym({{data_route}}), "^[.]"), 
+          !stringr::str_detect(dplyr::sym({{data_object}}), "^[.]")
         )
     }
     
     return(df_objects)
+  }
+  
+  
+  #' @title  Idenfity S3 Object type
+  #' 
+  #' @param object_key
+  #' @return file type: text, csv, excel, json, python, shell
+  #' 
+  s3_object_type <- function(object_key) {
+    
+    # idenfity Object type
+    object_type = NULL
+    
+    if (stringr::str_ends(object_key, ".csv")) 
+      object_type = "csv"
+    
+    if (stringr::str_ends(object_key, ".xls|.xlsx")) 
+      object_type = "excel"
+    
+    if (stringr::str_ends(object_key, ".json")) 
+      object_type = "json" 
+    
+    if (stringr::str_ends(object_key, ".txt")) 
+      object_type = "text" 
+    
+    if (stringr::str_ends(object_key, ".Rdata|.Rda|.Rds")) 
+      object_type = "r" 
+    
+    return(object_type)
   }
   
   
@@ -234,14 +260,21 @@ library(aws.s3)
   #' 
   #' 
   s3_read_object <- function(bucket, object_key,
-                                access_key = NULL,
-                                secret_key = NULL) {
+                             access_key = NULL,
+                             secret_key = NULL) {
+    
     # Check keys
     if (is.null(access_key))
-      access_key = get_key("s3", "access key")
+      access_key = glamr::get_s3key("access")
     
     if (is.null(secret_key))
-      secret_key = get_key("s3", "secret key")
+      secret_key = glamr::get_s3key("secret")
+    
+    # Object type
+    object_type = s3_object_type(object_key)
+    
+    # Notification
+    usethis::ui_info(base::paste0("TYPE - S3 Object type is: ", object_type)) 
     
     # Get object as raw data
     object_raw <- aws.s3::get_object(
@@ -254,10 +287,47 @@ library(aws.s3)
     # Create connection to raw data
     conn <- base::rawConnection(object_raw, open = "r") 
     
-    #base::on.exit({base::close(conn)})
+    # Data
+    df = NULL
     
     # Read content of raw data as tibble
-    df <- vroom::vroom(conn)
+    if (object_type == "excel") {
+      
+      # Notification
+      usethis::ui_info("PROCESS - Downloading S3 Object ...")
+      
+      tmpfile <- base::tempfile(fileext = ".xlsx")
+      
+      # Save object to temp file
+      s3_obj <- aws.s3::save_object(
+        bucket = bucket,
+        object = object_key,
+        file = tmpfile,
+        key = access_key,
+        secret = secret_key
+      )
+      
+      # Destination file
+      usethis::ui_info(paste0("FILE - " , s3_obj))
+      
+      # Read file content
+      usethis::ui_info("PROCESS - Reading data with {usethis::ui_code('Wavelength::hfr_import()')}")
+      
+      df <- Wavelength::hfr_import(tmpfile)
+      
+      # Clean up
+      file.remove(tmpfile)
+      
+      usethis::ui_info("PROCESS - Temp file removed")
+    } 
+    else {
+      
+      usethis::ui_info("PROCESS - Reading data with {usethis::ui_code('vroom::vroom()')}")
+      
+      df <- vroom::vroom(conn)
+    }
+    
+    usethis::ui_info("PROCESS - Completed!")
     
     return(df)
   }
@@ -289,6 +359,55 @@ library(aws.s3)
     writeBin(obj$Body, con = filename)
   }
 
+  
+  #' @title Download S3 Object
+  #' @note Works with R Package: aws.s3
+  #' 
+  #' @param bucket
+  #' @param object_key
+  #' @param filename
+  #' 
+  s3_download <- 
+    function(bucket, object_key, 
+             filepath = NULL,
+             access_key = NULL,
+             secret_key = NULL) {
+      
+      # Check keys
+      if (is.null(access_key))
+        access_key = glamr::get_s3key("access")
+      
+      if (is.null(secret_key))
+        secret_key = glamr::get_s3key("secret")
+      
+      # Notification
+      usethis::ui_info("PROCESS - Downloading S3 Object ...")
+      
+      # file name
+      if (is.null(filepath)) {
+        filepath <- tools::file_ext(object_key) %>% 
+          paste0(".", .) %>% 
+          base::tempfile(fileext = .)
+      }
+      
+      # Save object to temp file
+      s3_obj <- aws.s3::save_object(
+        bucket = bucket,
+        object = object_key,
+        file = filepath,
+        key = access_key,
+        secret = secret_key
+      )
+      
+      # Destination file
+      usethis::ui_info(paste0("FILE - ", s3_obj))
+
+      # Done
+      usethis::ui_info("PROCESS - Completed")
+      
+      return(s3_obj)
+    }
+  
   #' Transfer file to S3 Object
   #' @param s3_client
   #' @param s3_bucket
@@ -339,9 +458,7 @@ library(aws.s3)
   bkts <- bucketlist(key = get_key("s3", "access key"),
                      secret = get_key("s3", "secret key"))
   
-  bkts <- bkts %>% 
-    as_tibble() %>% 
-    clean_names() 
+  bkts <- s3_buckets()
   
   bkts %>% prinf()
   
@@ -356,50 +473,37 @@ library(aws.s3)
   bucket_exists(bucket = bkt_name)
   
   # List of the content of specific s3 bucket 
-  bkt_objects <- get_bucket(bucket = bkt_name,
-                    #prefix = "ddc/uat/processed/outgoing"
-                    max = 10)
+  bkt_objects <- get_bucket(
+      bucket = bkt_name,
+      #prefix = "ddc/uat/processed/outgoing"
+      max = 10,
+      key = get_s3key("access"),
+      secret = get_s3key("secret")
+    )
   
-  # content of bucket as a df
-  bkt_objects <- get_bucket_df(bucket = bkt_name,
-                               prefix = "ddc/uat",
-                               max = Inf)
+  bkt_objects$Contents
+
   
-  bkt_objects %>% glimpse()
-  
-  bkt_objects <- bkt_objects %>% 
-    as_tibble() %>% 
-    clean_names() %>% #glimpse()
-    rename(etag = e_tag) %>% 
-    mutate(
-      etag = str_remove_all(etag, '\"'),
-      last_modified = ymd(as.Date(last_modified)),
-      size = as.integer(size)
-    ) 
-  
-  bkt_objects %>% glimpse()
-  bkt_objects %>% head()
-  
-  #bkt_objects %>% View()
-  
-  #View(bkt_objects)
-  
-  # Identify all prefixes (subfolders)
-  bkt_objects %>% 
+  # Get raw hfr incoming objects
+  bkt_objects <- s3_objects(
+      bucket = bkt_name, 
+      prefix = "ddc/uat/raw/hfr/incoming",
+      n = 100
+    ) %>% 
     s3_unpack_keys() %>% 
-    glimpse()
+    filter(str_detect(sys_data_object, "^HFR"))
+  
+  bkt_objects %>% glimpse()
+  #bkt_objects %>% View()
   
   
   # Get object key
   bkt_obj_key <- bkt_objects %>% 
-    filter(sys_data_type == "processed",
-           sys_use_case == "hfr",
-           sys_data_route == 'outgoing',
-           str_detect(str_to_lower(sys_data_object), "^hfr_.*_tableau_.*.csv$")) %>% 
     arrange(desc(last_modified)) %>% 
     pull(key) %>% 
     first()
     
+  bkt_obj_key
   
   # Get bucket as an object
   bkt_obj <- get_object(
@@ -407,9 +511,12 @@ library(aws.s3)
     object = bkt_obj_key
   )
   
-  bkt_obj %>% 
-    rawConnection(open = "r") %>% 
-    vroom::vroom()
+  
+  bkt_objects %>% 
+    pull(key) %>% 
+    first() %>% 
+    s3_read_object(bucket = bkt_name, object_key = .) %>% 
+    View()
 
   
   # Read data from S3
