@@ -20,21 +20,28 @@ library(aws.s3)
 # GLOBALS ----
 
   # DDC - S3 Storage
-  Sys.setenv(
-    "AWS_ACCESS_KEY_ID" = get_key("s3", "access key"),
-    "AWS_SECRET_ACCESS_KEY" = get_key("s3", "secret key"),
-    "AWS_REGION" = "us-east-1"
-  )
+  # Sys.setenv(
+  #   "AWS_ACCESS_KEY_ID" = get_s3key("access"),
+  #   "AWS_SECRET_ACCESS_KEY" = get_s3key("secret"),
+  #   "AWS_REGION" = "us-east-1"
+  # )
 
   # DDC S3 Structure
+  s3_bucket <- "gov-usaid"
   s3_sys_envs <- c("dev", "test", "uat", "stg", "prod", "ddc")
   
   s3_data_types <- c("raw", "processed") # + logs & 1 & 2
   
-  s3_use_cases <- c("expenditure", "hfr", "supplychain")
   
-  s3_data_routes <- c("incoming", "receiving", "intermediate", 
-                      "outgoing", "rejects")
+  s3_use_cases <- c("expenditure", 
+                    "hfr", 
+                    "supplychain")
+  
+  s3_data_routes <- c("incoming",     # raw hfr data as .xlsx & .csv
+                      "receiving",    # Orgs, Mechs & MER Targets
+                      "intermediate", # Stagng area before copy to DB
+                      "outgoing",     # Tableau outputs
+                      "rejects")
 
 # FUNCTIONS ----
 
@@ -445,6 +452,99 @@ library(aws.s3)
       return(stringr::str_remove_all(transfer$ETag, '\"'))
     
     return(NULL)
+    }
+  
+  #' @title 
+  #' 
+  #' @param folders
+  #' @param bucket
+  #' @param access_key
+  #' @param secret_key
+  #' 
+  s3_folder <- function(folders, bucket,
+                        access_key = NULL,
+                        secret_key = NULL) {
+    
+    # Check S3 keys
+    if (is.null(access_key))
+      access_key = glamr::get_s3key("access")
+    
+    if (is.null(secret_key))
+      secret_key = glamr::get_s3key("secret")
+    
+    
+    aws.s3::put_folder(
+      folder = folder_test,
+      bucket = "gov-usaid-hfr",
+      key = get_s3key("access"),
+      secret = get_s3key("secret")
+    )
+  }
+  
+  
+  #' @title            Upload file to S3 Bucket
+  #' @param filepath   Source file path
+  #' @param bucket     S3 backet name
+  #' @param prefix     S3 Prefix (folder structure)
+  #' @param object     Destination S3 object name (with file extention)
+  #' @param access_key S3 Access Key
+  #' @param secret_key S3 Secret Key
+  #' 
+  s3_upload <- function(filepath, bucket,
+                        prefix = "",
+                        object = NULL,
+                        access_key = NULL,
+                        secret_key = NULL) {
+    
+    # Check S3 keys
+    if (is.null(access_key))
+      access_key = glamr::get_s3key("access")
+    
+    if (is.null(secret_key))
+      secret_key = glamr::get_s3key("secret")
+    
+    # s3 object: append prefix to file basename
+    s3_object <- ifelse(is.null(object), 
+                        base::file.path(prefix, base::basename(filepath)),
+                        object)
+    
+    # put object
+    aws.s3::put_object(
+      file =  filepath,
+      object = s3_object,
+      bucket = "gov-usaid-hfr", #bkt_name,
+      key = access_key,
+      secret = secret_key
+    )
+    
+  }
+  
+  
+  #' @title Remove objects from S3 bucket
+  #' 
+  #' @param objects S3 object keys (full path)
+  #' @param bucket     S3 backet name
+  #' @param access_key S3 Access Key
+  #' @param secret_key S3 Secret Key
+  #' 
+  s3_remove <- function(objects, bucket,
+                        access_key = NULL,
+                        secret_key = NULL) {
+    
+    # Check S3 keys
+    if (is.null(access_key))
+      access_key = glamr::get_s3key("access")
+    
+    if (is.null(secret_key))
+      secret_key = glamr::get_s3key("secret")
+    
+    # delete objects from bucket
+    aws.s3::delete_object(
+      object = objects,
+      bucket = bucket,
+      key = get_s3key("access"),
+      secret = get_s3key("secret")
+    )
   }
 
   
@@ -455,15 +555,12 @@ library(aws.s3)
   #aws.s3::bucketlist()
   #aws.s3::bucket_list_df()
   
-  bkts <- bucketlist(key = get_key("s3", "access key"),
-                     secret = get_key("s3", "secret key"))
-  
   bkts <- s3_buckets()
   
   bkts %>% prinf()
   
   # Bucket name
-  bkt_name <- bkts %>% 
+  bkt_name <- bkts %>%
     filter(str_detect(bucket, "^g.*aid$")) %>% 
     pull(bucket)
   
@@ -488,13 +585,14 @@ library(aws.s3)
   bkt_objects <- s3_objects(
       bucket = bkt_name, 
       prefix = "ddc/uat/raw/hfr/incoming",
-      n = 100
+      #prefix = "HFR",
+      n = 1000
     ) %>% 
     s3_unpack_keys() %>% 
     filter(str_detect(sys_data_object, "^HFR"))
   
   bkt_objects %>% glimpse()
-  #bkt_objects %>% View()
+  bkt_objects %>% View()
   
   
   # Get object key
@@ -524,6 +622,54 @@ library(aws.s3)
                bucket = bkt_name, 
                object = "ddc/uat/processed/hfr/outgoing/hfr_2021_02_Tableau_2020-12-17.csv")
   
+  
+  #create folder
+  folder_test <- "bk/raw/incoming"
+  
+  aws.s3::put_folder(
+    folder = folder_test,
+    bucket = "gov-usaid-hfr",
+    key = get_s3key("access"),
+    secret = get_s3key("secret")
+  )
+  
+  # Upload files as s3 object
+  list.files(
+      path = "./Data",
+      pattern = "HFR.*.xlsx$",
+      full.names = TRUE
+    ) %>% 
+    nth(2) %>% 
+    s3_upload(prefix = folder_test)
+  
+  # upload multiple files
+  list.files(
+      path = "./Data",
+      pattern = "HFR.*.xlsx$",
+      full.names = TRUE
+    ) %>%  
+    map(.x, .f = ~ s3_upload(filepath = .x,
+                  bucket = "gov-usaid-hfr",
+                  prefix = "bk/processed",
+                  object = str_replace(basename(.x), ".xlsx", "-test.xlsx")))
+  
+  
+  
+  
+  
+  # Delete objects from s3 bucket
+  # list.files(
+  #     path = "./Data",
+  #     pattern = "HFR.*.xlsx$",
+  #     full.names = TRUE
+  #   ) %>% 
+  #   first() %>% 
+  #   s3_remove(objects = basename(.),
+  #             bucket = "gov-usaid-hfr")
+  
+  
+  
+
   
 # PAWS - Package for Amazon Web Services in R ----
   
@@ -643,7 +789,7 @@ library(aws.s3)
   ) 
   
   
-  # Download files ----
+  # Download files
   s3_file <- s3$get_object(
     Bucket = bkt_new,
     Key = basename(file_csv)
@@ -673,3 +819,5 @@ library(aws.s3)
   file.remove(sample_file)
   file.remove(sample_file2)
   
+  
+#
