@@ -125,6 +125,19 @@ library(extrafont)
   
   df_sites %>% glimpse()
   
+  # HFR Submissions 
+  df_raws <- s3_objects(
+      bucket = 'gov-usaid',
+      prefix = "ddc/uat/raw/hfr/incoming",
+      n = Inf
+    ) %>% 
+    s3_unpack_keys() 
+
+  
+  df_raws %>% 
+    filter(nchar(sys_data_object) > 1,
+           str_detect(str_to_lower(sys_data_object), "war")) %>% 
+    pull(sys_data_object)
   
   # HFR Processed
   df_procs <- glamr::s3_objects(
@@ -231,3 +244,4 @@ library(extrafont)
     gisr::si_style_map() +
     theme(strip.text.y = element_text(angle = 90))
     
+
